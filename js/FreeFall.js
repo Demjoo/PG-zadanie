@@ -9,8 +9,8 @@ var timeStep = 0.05; // Larger time step for faster simulation
 
 // Ball-specific properties
 var ballData = [
-  { velocity: 0, positionY: 20, object: null }, // Ball 1
-  { velocity: 0, positionY: 30, object: null }, // Ball 2
+  { velocity: 0, positionY: 20, object: null, gravity: -20 }, // Ball 1 (normal gravity)
+  { velocity: 0, positionY: 30, object: null, gravity: -50 }, // Ball 2 (heavier, falls faster)
 ];
 
 // Drag-and-drop variables
@@ -18,11 +18,6 @@ var raycaster = new THREE.Raycaster();
 var mouse = new THREE.Vector2();
 var isDragging = false;
 var draggableObject = null;
-
-var ballData = [
-  { velocity: 0, positionY: 20, object: null, gravity: -20 }, // Ball 1 (normal gravity)
-  { velocity: 0, positionY: 30, object: null, gravity: -50 }, // Ball 2 (heavier, falls faster)
-];
 
 init();
 render();
@@ -63,16 +58,34 @@ function render() {
     ballSimulation();
   }
 
+  // If a ball is being dragged, update the camera position
+  if (isDragging && draggableObject) {
+    // Keep the camera focused on the dragged ball
+    camera.position.x = draggableObject.position.x;
+    camera.position.y = draggableObject.position.y + 50; // Camera above the ball
+    camera.position.z = draggableObject.position.z + 100; // Camera behind the ball
+    camera.lookAt(draggableObject.position); // Camera looks at the ball
+  } else {
+    // Fixate the camera on Ball 1 when not dragging (can change to follow any ball)
+    const ballToFocus = ballData[0].object; // Change to ballData[1].object to follow Ball 2
+    camera.position.x = ballToFocus.position.x;
+    camera.position.y = ballToFocus.position.y + 50; // Camera above the ball
+    camera.position.z = ballToFocus.position.z + 100; // Camera behind the ball
+    camera.lookAt(ballToFocus.position); // Camera looks at the ball
+  }
+
   renderer.render(scene, camera);
+
   if (keyboard.pressed("R")) {
     ballData[0].positionY = 20; // Reset Ball 1
+    ball1.position.x = 0;
     ballData[1].positionY = 30; // Reset Ball 2
+    ball2.position.x = 10; // Reset Ball 2
   }
 }
 
 function addObjects() {
   // Ground Plane
-
   var light = new THREE.AmbientLight(0x404040, 1); // Ambient light
   scene.add(light);
 
@@ -80,7 +93,7 @@ function addObjects() {
   directionalLight.position.set(1, 1, 1).normalize();
   scene.add(directionalLight);
 
-  var geometryPlane = new THREE.PlaneGeometry(400, 400, 4, 4);
+  var geometryPlane = new THREE.PlaneGeometry(700, 700, 4, 4);
   var planeTexture = new THREE.TextureLoader().load("texture/brick_floor.jpg"); // Use TextureLoader for better compatibility
   var materialPlane = new THREE.MeshStandardMaterial({
     map: planeTexture,
@@ -101,8 +114,8 @@ function addObjects() {
   ballData[1].object = ball2;
 
   // Background Sphere (Sky)
-  var geometryBackground = new THREE.SphereGeometry(200, 200, 200);
-  var backgroundTexture = new THREE.ImageUtils.loadTexture("texture/sky.jpg");
+  var geometryBackground = new THREE.SphereGeometry(700, 700, 700);
+  var backgroundTexture = new THREE.TextureLoader().load("texture/sky.jpg");
   var materialBackground = new THREE.MeshBasicMaterial({
     map: backgroundTexture,
     transparent: true,
@@ -115,7 +128,7 @@ function addObjects() {
 
 function createBall(x, y, z, texturePath) {
   var geometryBall = new THREE.SphereGeometry(5, 64, 64);
-  var ballTexture = new THREE.ImageUtils.loadTexture(texturePath);
+  var ballTexture = new THREE.TextureLoader().load(texturePath);
   var materialBall = new THREE.MeshBasicMaterial({
     map: ballTexture,
   });
@@ -157,6 +170,7 @@ function onMouseDown(event) {
 
   // Check if either sphere is clicked
   var intersects = raycaster.intersectObjects([ball1, ball2]);
+  console.log("Raycaster intersects:", intersects); // Log intersections for debugging
   if (intersects.length > 0) {
     isDragging = true;
     draggableObject = intersects[0].object;
