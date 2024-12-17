@@ -1,5 +1,5 @@
 var camera, scene, renderer, controls; // Added 'controls'
-var plane, ball1, ball2, background;
+var plane, tennisBall, ball2, Basketball, background;
 var clock = new THREE.Clock();
 var keyboard = new THREEx.KeyboardState();
 
@@ -9,8 +9,38 @@ var timeStep = 0.05;
 
 // Ball-specific properties
 var ballData = [
-  { velocity: 0, positionY: 20, object: null, gravity: -20 },
-  { velocity: 0, positionY: 30, object: null, gravity: -50 },
+  {
+    velocity: 0,
+    positionY: 20,
+    object: null,
+    gravity: -20,
+    bounce: 0.7,
+    size: 5,
+  }, // Tennis Ball
+  {
+    velocity: 0,
+    positionY: 30,
+    object: null,
+    gravity: -50,
+    bounce: 0.5,
+    size: 3,
+  }, // 8 ball
+  {
+    velocity: 0,
+    positionY: 20,
+    object: null,
+    gravity: -20,
+    bounce: 0.8,
+    size: 12,
+  }, // Basketball with higher bounce
+  {
+    velocity: 0,
+    positionY: 20,
+    object: null,
+    gravity: -3,
+    bounce: 0.7,
+    size: 15,
+  }, // BeachBall
 ];
 
 // Drag-and-drop variables
@@ -59,7 +89,6 @@ function render() {
   requestAnimationFrame(render);
 
   // Update OrbitControls
-  update();
 
   // Simulate free-fall for the spheres if not dragging
   if (!isDragging) {
@@ -70,10 +99,18 @@ function render() {
 
   if (keyboard.pressed("R")) {
     ballData[0].positionY = 20;
-    ball1.position.x = 0;
+    tennisBall.position.x = 0;
+
     ballData[1].positionY = 30;
-    ball2.position.x = 10;
+    ball2.position.x = 15;
+
+    ballData[2].positionY = 20;
+    Basketball.position.x = -20;
+
+    ballData[3].positionY = 20;
+    BeachBall.position.x = -50;
   }
+  update();
 }
 
 function addObjects() {
@@ -94,13 +131,44 @@ function addObjects() {
   plane.rotation.x = Math.PI / 2;
   scene.add(plane);
 
-  // Ball 1
-  ball1 = createBall(0, ballData[0].positionY, 0, "texture/wood.png");
-  ballData[0].object = ball1;
+  // Tennis ball
+  tennisBall = createBall(
+    0,
+    ballData[0].positionY,
+    0,
+    "texture/Tennis.jpg",
+    ballData[0].size
+  );
+  ballData[0].object = tennisBall;
 
-  // Ball 2
-  ball2 = createBall(10, ballData[1].positionY, 0, "texture/carbon.png");
+  // Ball 2 (Wooden Ball 2)
+  ball2 = createBall(
+    15,
+    ballData[1].positionY,
+    0,
+    "texture/8ball.jpg",
+    ballData[1].size
+  );
   ballData[1].object = ball2;
+
+  // Basketball
+  Basketball = createBall(
+    -20,
+    ballData[2].positionY,
+    0,
+    "texture/Basketball.jpg",
+    ballData[2].size
+  );
+  ballData[2].object = Basketball;
+
+  BeachBall = createBall(
+    -50,
+    ballData[3].positionY,
+    0,
+    "texture/BeachBall.jpg",
+    ballData[3].size
+  );
+  ballData[3].object = BeachBall;
 
   // Sky Sphere (Background)
   var geometryBackground = new THREE.SphereGeometry(700, 32, 32);
@@ -114,8 +182,8 @@ function addObjects() {
   scene.add(background);
 }
 
-function createBall(x, y, z, texturePath) {
-  var geometryBall = new THREE.SphereGeometry(5, 32, 32);
+function createBall(x, y, z, texturePath, size) {
+  var geometryBall = new THREE.SphereGeometry(size, 32, 32); // Ball size now passed in
   var ballTexture = new THREE.TextureLoader().load(texturePath);
   var materialBall = new THREE.MeshBasicMaterial({
     map: ballTexture,
@@ -132,9 +200,11 @@ function ballSimulation() {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
 
-      if (ball.positionY <= 0) {
-        ball.positionY = 0;
-        ball.velocity = -ball.velocity * 0.5;
+      // Adjust the bounce condition to account for ball's size and ground position
+      if (ball.positionY <= ball.size + -5) {
+        // Ground position is at y = -5
+        ball.positionY = ball.size + -5; // Ensure the ball is positioned at ground level plus its radius
+        ball.velocity = -ball.velocity * ball.bounce; // Adjust bounce based on size
       }
 
       ball.object.position.y = ball.positionY;
@@ -144,19 +214,18 @@ function ballSimulation() {
 
 let hasDragged = false; // Track dragging state
 
-// Track current Z position for each ball
-var ballZPositions = {
-  ball1: ball1.position.z,
-  ball2: ball2.position.z,
-};
-
 function onMouseDown(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
 
-  var intersects = raycaster.intersectObjects([ball1, ball2]);
+  var intersects = raycaster.intersectObjects([
+    tennisBall,
+    ball2,
+    Basketball,
+    BeachBall,
+  ]);
 
   if (intersects.length > 0) {
     isDragging = true;
@@ -193,7 +262,14 @@ function onMouseMove(event) {
       draggableObject.position.set(
         intersection.x,
         newY,
-        ballZPositions[draggableObject === ball1 ? "ball1" : "ball2"]
+        0
+        // ballZPositions[
+        //   draggableObject === tennisBall
+        //     ? "tennisBall"
+        //     : draggableObject === ball2
+        //     ? "ball2"
+        //     : "Basketball"
+        // ]
       );
 
       // Update ball's Y position
@@ -226,13 +302,13 @@ function update() {
   var rotateAngle = (Math.PI / 2) * delta;
 
   if (keyboard.pressed("W")) {
-    ball1.translateZ(moveDistance);
-    ballZPositions.ball1 = ball1.position.z; // Update Z position
+    tennisBall.translateZ(moveDistance);
+    ballZPositions.tennisBall = tennisBall.position.z; // Update Z position
   }
 
   if (keyboard.pressed("S")) {
-    ball1.translateZ(-moveDistance);
-    ballZPositions.ball1 = ball1.position.z; // Update Z position
+    tennisBall.translateZ(-moveDistance);
+    ballZPositions.tennisBall = tennisBall.position.z; // Update Z position
   }
 
   controls.update();
