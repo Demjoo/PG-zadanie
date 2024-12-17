@@ -1,16 +1,16 @@
-var camera, scene, renderer;
+var camera, scene, renderer, controls; // Added 'controls'
 var plane, ball1, ball2, background;
 var clock = new THREE.Clock();
 var keyboard = new THREEx.KeyboardState();
 
 // Gravity and physics variables for the ball simulation
-var gravity = -20; // Stronger gravity for faster falling
-var timeStep = 0.05; // Larger time step for faster simulation
+var gravity = -20;
+var timeStep = 0.05;
 
 // Ball-specific properties
 var ballData = [
-  { velocity: 0, positionY: 20, object: null, gravity: -20 }, // Ball 1 (normal gravity)
-  { velocity: 0, positionY: 30, object: null, gravity: -50 }, // Ball 2 (heavier, falls faster)
+  { velocity: 0, positionY: 20, object: null, gravity: -20 },
+  { velocity: 0, positionY: 30, object: null, gravity: -50 },
 ];
 
 // Drag-and-drop variables
@@ -23,7 +23,7 @@ init();
 render();
 
 function init() {
-  // Camera Setup (Fixed position)
+  // Camera Setup
   camera = new THREE.PerspectiveCamera(
     70,
     window.innerWidth / window.innerHeight,
@@ -31,20 +31,25 @@ function init() {
     1000
   );
   camera.position.set(0, 50, 100);
-  camera.lookAt(0, 0, 0); // Keep the camera focused on the center
+  camera.lookAt(0, 0, 0);
 
   // Renderer Setup
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = false; // Disable all shadows
   document.body.appendChild(renderer.domElement);
 
   // Scene Setup
   scene = new THREE.Scene();
 
-  // Add objects: Sphere and Plane
+  // OrbitControls
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.update();
+
+  // Add objects
   addObjects();
 
-  // Event Listeners for Drag-and-Drop
+  // Event Listeners
   window.addEventListener("mousedown", onMouseDown, false);
   window.addEventListener("mousemove", onMouseMove, false);
   window.addEventListener("mouseup", onMouseUp, false);
@@ -53,55 +58,39 @@ function init() {
 function render() {
   requestAnimationFrame(render);
 
+  // Update OrbitControls
+  update();
+
   // Simulate free-fall for the spheres if not dragging
   if (!isDragging) {
     ballSimulation();
   }
 
-  // If a ball is being dragged, update the camera position
-  if (isDragging && draggableObject) {
-    // Keep the camera focused on the dragged ball
-    camera.position.x = draggableObject.position.x;
-    camera.position.y = draggableObject.position.y + 50; // Camera above the ball
-    camera.position.z = draggableObject.position.z + 100; // Camera behind the ball
-    camera.lookAt(draggableObject.position); // Camera looks at the ball
-  } else {
-    // Fixate the camera on Ball 1 when not dragging (can change to follow any ball)
-    const ballToFocus = ballData[0].object; // Change to ballData[1].object to follow Ball 2
-    camera.position.x = ballToFocus.position.x;
-    camera.position.y = ballToFocus.position.y + 50; // Camera above the ball
-    camera.position.z = ballToFocus.position.z + 100; // Camera behind the ball
-    camera.lookAt(ballToFocus.position); // Camera looks at the ball
-  }
-
   renderer.render(scene, camera);
 
   if (keyboard.pressed("R")) {
-    ballData[0].positionY = 20; // Reset Ball 1
+    ballData[0].positionY = 20;
     ball1.position.x = 0;
-    ballData[1].positionY = 30; // Reset Ball 2
-    ball2.position.x = 10; // Reset Ball 2
+    ballData[1].positionY = 30;
+    ball2.position.x = 10;
   }
 }
 
 function addObjects() {
-  // Ground Plane
-  var light = new THREE.AmbientLight(0x404040, 1); // Ambient light
+  // Ambient Light
+  var light = new THREE.AmbientLight(0x404040, 1);
   scene.add(light);
 
-  var directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-  directionalLight.position.set(1, 1, 1).normalize();
-  scene.add(directionalLight);
-
+  // Plane (Ground)
   var geometryPlane = new THREE.PlaneGeometry(700, 700, 4, 4);
-  var planeTexture = new THREE.TextureLoader().load("texture/brick_floor.jpg"); // Use TextureLoader for better compatibility
-  var materialPlane = new THREE.MeshStandardMaterial({
+  var planeTexture = new THREE.TextureLoader().load("texture/brick_floor.jpg");
+  var materialPlane = new THREE.MeshBasicMaterial({
     map: planeTexture,
-    side: THREE.DoubleSide, // Ensure the texture appears on both sides
+    side: THREE.DoubleSide,
   });
 
   plane = new THREE.Mesh(geometryPlane, materialPlane);
-  plane.position.set(0, -5, 0); // Adjusted to serve as ground
+  plane.position.set(0, -5, 0);
   plane.rotation.x = Math.PI / 2;
   scene.add(plane);
 
@@ -113,12 +102,11 @@ function addObjects() {
   ball2 = createBall(10, ballData[1].positionY, 0, "texture/carbon.png");
   ballData[1].object = ball2;
 
-  // Background Sphere (Sky)
-  var geometryBackground = new THREE.SphereGeometry(700, 700, 700);
+  // Sky Sphere (Background)
+  var geometryBackground = new THREE.SphereGeometry(700, 32, 32);
   var backgroundTexture = new THREE.TextureLoader().load("texture/sky.jpg");
   var materialBackground = new THREE.MeshBasicMaterial({
     map: backgroundTexture,
-    transparent: true,
     side: THREE.DoubleSide,
   });
   background = new THREE.Mesh(geometryBackground, materialBackground);
@@ -127,7 +115,7 @@ function addObjects() {
 }
 
 function createBall(x, y, z, texturePath) {
-  var geometryBall = new THREE.SphereGeometry(5, 64, 64);
+  var geometryBall = new THREE.SphereGeometry(5, 32, 32);
   var ballTexture = new THREE.TextureLoader().load(texturePath);
   var materialBall = new THREE.MeshBasicMaterial({
     map: ballTexture,
@@ -138,79 +126,114 @@ function createBall(x, y, z, texturePath) {
   return ball;
 }
 
-// Ball simulation function to handle gravity-based movement
 function ballSimulation() {
   ballData.forEach((ball) => {
     if (!isDragging || draggableObject !== ball.object) {
-      // Update velocity and position using simple physics (v = u + at, s = s0 + vt)
-      ball.velocity += ball.gravity * timeStep; // Velocity update (use ball's gravity)
-      ball.positionY += ball.velocity * timeStep; // Position update
+      ball.velocity += ball.gravity * timeStep;
+      ball.positionY += ball.velocity * timeStep;
 
-      // Check for collision with ground (plane is at y = -5 for the larger ball)
       if (ball.positionY <= 0) {
-        // Considering ball's radius is 5
         ball.positionY = 0;
-        ball.velocity = -ball.velocity * 0.5; // Inelastic bounce (damping)
+        ball.velocity = -ball.velocity * 0.5;
       }
 
-      // Update sphere position
       ball.object.position.y = ball.positionY;
     }
   });
 }
 
-// Mouse Events for Drag-and-Drop
+let hasDragged = false; // Track dragging state
+
+// Track current Z position for each ball
+var ballZPositions = {
+  ball1: ball1.position.z,
+  ball2: ball2.position.z,
+};
+
 function onMouseDown(event) {
-  // Convert mouse position to normalized device coordinates (-1 to +1)
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-  // Update the raycaster with the camera and mouse position
   raycaster.setFromCamera(mouse, camera);
 
-  // Check if either sphere is clicked
   var intersects = raycaster.intersectObjects([ball1, ball2]);
-  console.log("Raycaster intersects:", intersects); // Log intersections for debugging
+
   if (intersects.length > 0) {
     isDragging = true;
+    hasDragged = false; // Reset dragging state
     draggableObject = intersects[0].object;
+
+    // Stop OrbitControls while dragging
+    controls.enabled = false;
+
+    // Stop gravity for the selected ball
     ballData.forEach((ball) => {
-      if (ball.object === draggableObject) ball.velocity = 0; // Stop gravity for the selected ball
+      if (ball.object === draggableObject) ball.velocity = 0;
     });
   }
 }
 
 function onMouseMove(event) {
   if (isDragging && draggableObject) {
-    // Convert mouse position to normalized device coordinates (-1 to +1)
+    hasDragged = true; // Mark as dragging
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    // Create a virtual plane aligned with the camera
     var dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     raycaster.setFromCamera(mouse, camera);
 
-    // Find the intersection of the ray with the drag plane
     var intersection = new THREE.Vector3();
     raycaster.ray.intersectPlane(dragPlane, intersection);
 
     if (intersection) {
-      // Enforce the Y-coordinate constraint
       const groundLevel = -5 + 5; // Plane Y (-5) + Ball radius (5)
       const newY = Math.max(intersection.y, groundLevel);
 
-      // Update the ball's position based on the constrained intersection
-      draggableObject.position.set(intersection.x, newY, 0); // Keep Z fixed
+      // Set new position, but maintain the Z position from ballZPositions
+      draggableObject.position.set(
+        intersection.x,
+        newY,
+        ballZPositions[draggableObject === ball1 ? "ball1" : "ball2"]
+      );
+
+      // Update ball's Y position
       ballData.forEach((ball) => {
-        if (ball.object === draggableObject) ball.positionY = newY; // Update the specific ball's Y position
+        if (ball.object === draggableObject) ball.positionY = newY;
       });
     }
   }
 }
 
-function onMouseUp() {
+function onMouseUp(event) {
   if (isDragging) {
     isDragging = false;
     draggableObject = null;
+
+    // Only re-enable OrbitControls if no dragging occurred
+    setTimeout(() => {
+      if (!hasDragged) {
+        controls.enabled = true;
+      }
+    }, 50); // Delay to prevent immediate triggering
+  } else {
+    controls.enabled = true; // Enable controls if it was a simple click
   }
+}
+
+function update() {
+  var delta = clock.getDelta();
+  var moveDistance = 30 * delta;
+  var rotateAngle = (Math.PI / 2) * delta;
+
+  if (keyboard.pressed("W")) {
+    ball1.translateZ(moveDistance);
+    ballZPositions.ball1 = ball1.position.z; // Update Z position
+  }
+
+  if (keyboard.pressed("S")) {
+    ball1.translateZ(-moveDistance);
+    ballZPositions.ball1 = ball1.position.z; // Update Z position
+  }
+
+  controls.update();
 }
