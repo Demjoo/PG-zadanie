@@ -6,6 +6,8 @@ var keyboard = new THREEx.KeyboardState();
 // Gravity and physics variables for the ball simulation
 var gravity = -20;
 var timeStep = 0.05;
+var windEnabled = false; // Toggle wind on/off
+var windForce = { x: 10, z: 5 }; // Wind strength and direction
 
 // Ball-specific properties
 var ballData = [
@@ -16,6 +18,7 @@ var ballData = [
     gravity: -20,
     bounce: 0.7,
     size: 5,
+    windResistance: 0.2,
   }, // Tennis Ball
   {
     velocity: 0,
@@ -24,6 +27,7 @@ var ballData = [
     gravity: -50,
     bounce: 0.5,
     size: 3,
+    windResistance: 0.05,
   }, // 8 ball
   {
     velocity: 0,
@@ -32,6 +36,7 @@ var ballData = [
     gravity: -20,
     bounce: 0.8,
     size: 12,
+    windResistance: 0.15,
   }, // Basketball with higher bounce
   {
     velocity: 0,
@@ -40,6 +45,7 @@ var ballData = [
     gravity: -3,
     bounce: 0.7,
     size: 15,
+    windResistance: 0.3,
   }, // BeachBall
 ];
 
@@ -71,7 +77,7 @@ function init() {
 
   // Scene Setup
   scene = new THREE.Scene();
-
+  createWindToggleButton();
   // OrbitControls
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.update();
@@ -194,11 +200,34 @@ function createBall(x, y, z, texturePath, size) {
   return ball;
 }
 
+// Add wind control button
+function createWindToggleButton() {
+  const button = document.createElement('button');
+  button.id = 'toggle-wind';
+  button.innerText = 'Toggle Wind';
+  button.style.position = 'absolute';
+  button.style.top = '10px';
+  button.style.right = '10px';
+  button.style.zIndex = '1000';
+  document.body.appendChild(button);
+
+  button.addEventListener('click', () => {
+    windEnabled = !windEnabled;
+    button.innerText = windEnabled ? 'Wind ON' : 'Wind OFF';
+  });
+}
+
 function ballSimulation() {
   ballData.forEach((ball) => {
     if (!isDragging || draggableObject !== ball.object) {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
+
+      // Apply wind if enabled.
+      if (windEnabled) {
+        ball.object.position.x += windForce.x * ball.windResistance * timeStep;
+        ball.object.position.z += windForce.z * ball.windResistance * timeStep;
+      }
 
       // Adjust the bounce condition to account for ball's size and ground position
       if (ball.positionY <= ball.size + -5) {
@@ -211,6 +240,7 @@ function ballSimulation() {
     }
   });
 }
+
 
 let hasDragged = false; // Track dragging state
 
