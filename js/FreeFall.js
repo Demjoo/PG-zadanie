@@ -370,8 +370,8 @@ function createSurfaceSelectionMenu() {
 // Function to update the surface based on selection
 function updateSurface(selectedSurface) {
   const surfaceProperties = {
-    grass: { bounce: 0.5, friction: 0.7, texture: "texture/grass.jpg" },
-    wood: { bounce: 0.6, friction: 0.5, texture: "texture/wood.jpg" },
+    grass: { bounce: 0.5, friction: 0.7, texture: "texture/grass2.jpg" },
+    wood: { bounce: 0.6, friction: 0.5, texture: "texture/wood2.jpg" },
     brick: { bounce: 0.7, friction: 0.6, texture: "texture/brick_floor.jpg" },
     trampoline: {
       bounce: 0.9,
