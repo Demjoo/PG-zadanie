@@ -110,15 +110,19 @@ function render() {
   if (keyboard.pressed("R")) {
     ballData[0].positionY = 20;
     tennisBall.position.x = 0;
+    tennisBall.position.z = 0;
 
     ballData[1].positionY = 30;
     ball2.position.x = 15;
+    ball2.position.z = 0;
 
     ballData[2].positionY = 20;
     Basketball.position.x = -20;
+    Basketball.position.z = 0;
 
     ballData[3].positionY = 20;
     BeachBall.position.x = -50;
+    BeachBall.position.z = 0;
   }
   update();
 }
@@ -207,24 +211,68 @@ function createBall(x, y, z, texturePath, size) {
 
 // Add wind control button
 function createWindToggleButton() {
-  const button = document.createElement('button');
-  button.id = 'toggle-wind';
-  button.innerText = 'Toggle Wind';
-  button.style.position = 'absolute';
-  button.style.top = '20px';
-  button.style.right = '10px';
-  button.style.zIndex = '1000';
+  const button = document.createElement("button");
+  button.id = "toggle-wind";
+  button.innerText = "Toggle Wind";
+  button.style.position = "absolute";
+  button.style.top = "20px";
+  button.style.right = "10px";
+  button.style.zIndex = "1000";
   button.style.height = "30px";
   button.style.width = "120px";
   button.style.borderRadius = "7px";
   button.style.border = "2px solid #007BFF";
   document.body.appendChild(button);
 
-  button.addEventListener('click', () => {
+  button.addEventListener("click", () => {
     windEnabled = !windEnabled;
-    button.innerText = windEnabled ? 'Wind ON' : 'Wind OFF';
+    button.innerText = windEnabled ? "Wind ON" : "Wind OFF";
   });
 }
+
+// function detectBallCollision(ball1, ball2) {
+//   const distance = ball1.position.clone().sub(ball2.position).length();
+//   const combinedRadius =
+//     ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
+//   return distance < combinedRadius; // Balls are colliding if the distance is smaller than their combined radius
+// }
+
+// function handleBallCollision(ball1, ball2) {
+//   if (detectBallCollision(ball1, ball2)) {
+//     const direction = ball1.position.clone().sub(ball2.position).normalize();
+//     const combinedRadius =
+//       ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
+//     const overlap =
+//       combinedRadius - ball1.position.clone().sub(ball2.position).length();
+
+//     // If there's overlap, adjust their positions to prevent overlap
+//     if (overlap > 0) {
+//       const adjustment = direction.multiplyScalar(overlap / 2); // Split the overlap equally
+//       ball1.position.add(adjustment);
+//       ball2.position.sub(adjustment);
+//     }
+
+//     // Simple bounce (elastic collision)
+//     const normalVelocity1 = ball1.velocity.dot(direction);
+//     const normalVelocity2 = ball2.velocity.dot(direction);
+
+//     const newVelocity1 =
+//       (normalVelocity1 * (ball1.mass - ball2.mass) +
+//         2 * ball2.mass * normalVelocity2) /
+//       (ball1.mass + ball2.mass);
+//     const newVelocity2 =
+//       (normalVelocity2 * (ball2.mass - ball1.mass) +
+//         2 * ball1.mass * normalVelocity1) /
+//       (ball1.mass + ball2.mass);
+
+//     ball1.velocity.add(
+//       direction.multiplyScalar(newVelocity1 - normalVelocity1)
+//     ); // Update ball 1's velocity
+//     ball2.velocity.add(
+//       direction.multiplyScalar(newVelocity2 - normalVelocity2)
+//     ); // Update ball 2's velocity
+//   }
+// }
 
 function ballSimulation() {
   ballData.forEach((ball) => {
@@ -232,17 +280,46 @@ function ballSimulation() {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
 
+      // // Ball-to-ball collision check
+      // ballData.forEach((otherBall) => {
+      //   if (ball !== otherBall) {
+      //     handleBallCollision(ball.object, otherBall.object); // Resolve collision
+      //   }
+      // });
+
       // Apply wind if enabled.
       if (windEnabled) {
         ball.object.position.x += windForce.x * ball.windResistance * timeStep;
         ball.object.position.z += windForce.z * ball.windResistance * timeStep;
+
+        const rotationSpeed = 0.007;
+        const windEffect = Math.sqrt(
+          Math.pow(windForce.x, 2) + Math.pow(windForce.z, 2)
+        );
+
+        // Normalize wind direction
+        const windDirection = new THREE.Vector3(
+          windForce.x,
+          0,
+          windForce.z
+        ).normalize();
+
+        // Apply rotation using wind direction and effect
+        const rotationAmount = windEffect * ball.windResistance * rotationSpeed;
+
+        // Slight random variation to make the rotation more natural
+        const randomFactor = 0.02 * (Math.random() - 0.5); // Small random factor for variation
+
+        // Apply rotation based on wind direction
+        ball.object.rotation.x +=
+          (windDirection.x + randomFactor) * rotationAmount;
+        ball.object.rotation.z +=
+          (windDirection.z + randomFactor) * rotationAmount;
       }
 
-      // Adjust the bounce condition to account for ball's size and ground position
       if (ball.positionY <= ball.size + -5) {
-        // Ground position is at y = -5
-        ball.positionY = ball.size + -5; // Ensure the ball is positioned at ground level plus its radius
-        ball.velocity = -ball.velocity * ball.bounce; // Adjust bounce based on size
+        ball.positionY = ball.size + -5;
+        ball.velocity = -ball.velocity * ball.bounce;
       }
 
       ball.object.position.y = ball.positionY;
@@ -293,10 +370,14 @@ function createSurfaceSelectionMenu() {
 // Function to update the surface based on selection
 function updateSurface(selectedSurface) {
   const surfaceProperties = {
-    grass: { bounce: 0.5,friction: 0.7, texture: "texture/grass.jpg" },
+    grass: { bounce: 0.5, friction: 0.7, texture: "texture/grass.jpg" },
     wood: { bounce: 0.6, friction: 0.5, texture: "texture/wood.jpg" },
     brick: { bounce: 0.7, friction: 0.6, texture: "texture/brick_floor.jpg" },
-    trampoline: { bounce: 0.9, friction: 0.3, texture: "texture/trampoline.jpg" },
+    trampoline: {
+      bounce: 0.9,
+      friction: 0.3,
+      texture: "texture/trampoline.jpg",
+    },
   };
 
   const surface = surfaceProperties[selectedSurface];
@@ -415,8 +496,18 @@ function createCustomBallMenu() {
   const inputs = [
     { label: "Size", id: "customSize", type: "number", defaultValue: 5 },
     { label: "Bounce", id: "customBounce", type: "number", defaultValue: 0.7 },
-    { label: "Gravity", id: "customGravity", type: "number", defaultValue: -20 },
-    { label: "Wind Resistance", id: "customWindResistance", type: "number", defaultValue: 0.2 },
+    {
+      label: "Gravity",
+      id: "customGravity",
+      type: "number",
+      defaultValue: -20,
+    },
+    {
+      label: "Wind Resistance",
+      id: "customWindResistance",
+      type: "number",
+      defaultValue: 0.2,
+    },
     // { label: "Position X", id: "customPosX", type: "number", defaultValue: 0 },
   ];
 
@@ -475,7 +566,9 @@ function createCustomBallMenu() {
     const size = parseFloat(document.getElementById("customSize").value);
     const bounce = parseFloat(document.getElementById("customBounce").value);
     const gravity = parseFloat(document.getElementById("customGravity").value);
-    const windResistance = parseFloat(document.getElementById("customWindResistance").value);
+    const windResistance = parseFloat(
+      document.getElementById("customWindResistance").value
+    );
     const selectedColor = document.getElementById("customColor").value;
 
     addCustomBall(size, bounce, gravity, windResistance, -10, 0, selectedColor);
@@ -485,14 +578,23 @@ function createCustomBallMenu() {
   document.body.appendChild(formContainer);
 }
 
-
-function addCustomBall(size, bounce, gravity, windResistance, posY, posZ, color) {
+function addCustomBall(
+  size,
+  bounce,
+  gravity,
+  windResistance,
+  posY,
+  posZ,
+  color
+) {
   // We get the last ball from the ballData list (assuming at least one ball has already been added)
   const lastBall = ballData[ballData.length - 1];
-  console.log('last ball', lastBall);
+  console.log("last ball", lastBall);
 
   // We determine the X position of the new ball based on the X position of the last ball.
-  const posX = lastBall ? lastBall.object.position.x - lastBall.size * 2 - size * 2 : 0;
+  const posX = lastBall
+    ? lastBall.object.position.x - lastBall.size * 2 - size * 2
+    : 0;
 
   // We create a new ball with the selected color as its texture
   const newBall = createBallWithColor(posX, posY, posZ, color, size);
