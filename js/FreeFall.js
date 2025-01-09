@@ -1,7 +1,12 @@
 var camera, scene, renderer, controls; // Added 'controls'
-var plane, tennisBall, ball2, Basketball, background;
+var plane, tennisBall, blackBall, Basketball, background, plane1, plane2;
 var clock = new THREE.Clock();
 var keyboard = new THREEx.KeyboardState();
+var objTrampoline;
+let trampolineBox = null;
+let waterBlock; // Water block variable
+const minVelocityThreshold = 0.1; // Minimum velocity to stop bouncing
+var trampolineMultiplier = 1.5;
 
 // Gravity and physics variables for the ball simulation
 var gravity = -20;
@@ -9,10 +14,16 @@ var timeStep = 0.05;
 var windEnabled = false; // Toggle wind on/off
 var windForce = { x: 10, z: 5 }; // Wind strength and direction
 
+let obstacles = [
+  { position: { x: -100, y: 100, z: 0 }, width: 40, height: 5 },
+  { position: { x: 100, y: 80, z: 0 }, width: 40, height: 5 },
+];
+
 // Ball-specific properties
 var ballData = [
   {
     velocity: 0,
+    positionX: 0,
     positionY: 20,
     object: null,
     gravity: -20,
@@ -22,6 +33,7 @@ var ballData = [
   }, // Tennis Ball
   {
     velocity: 0,
+    positionX: 15,
     positionY: 30,
     object: null,
     gravity: -50,
@@ -31,23 +43,29 @@ var ballData = [
   }, // 8 ball
   {
     velocity: 0,
+    positionX: -20,
     positionY: 20,
     object: null,
     gravity: -20,
-    bounce: 0.8,
+    bounce: 0.9,
     size: 12,
     windResistance: 0.15,
   }, // Basketball with higher bounce
   {
     velocity: 0,
+    positionX: -50,
     positionY: 20,
     object: null,
     gravity: -3,
-    bounce: 0.7,
+    bounce: 0.8,
     size: 15,
     windResistance: 0.3,
   }, // BeachBall
 ];
+
+ballData.forEach((ball) => {
+  ball.originalGravity = ball.gravity;
+});
 
 // Drag-and-drop variables
 var raycaster = new THREE.Raycaster();
@@ -106,15 +124,14 @@ function render() {
   }
 
   renderer.render(scene, camera);
-
   if (keyboard.pressed("R")) {
     ballData[0].positionY = 20;
     tennisBall.position.x = 0;
     tennisBall.position.z = 0;
 
     ballData[1].positionY = 30;
-    ball2.position.x = 15;
-    ball2.position.z = 0;
+    blackBall.position.x = 15;
+    blackBall.position.z = 0;
 
     ballData[2].positionY = 20;
     Basketball.position.x = -20;
@@ -147,7 +164,7 @@ function addObjects() {
 
   // Tennis ball
   tennisBall = createBall(
-    0,
+    ballData[0].positionX,
     ballData[0].positionY,
     0,
     "texture/Tennis.jpg",
@@ -155,19 +172,24 @@ function addObjects() {
   );
   ballData[0].object = tennisBall;
 
+  // Log position for debugging
+  console.log("Tennis Ball Position:", tennisBall.position);
+
   // Ball 2 (Wooden Ball 2)
-  ball2 = createBall(
-    15,
+  blackBall = createBall(
+    ballData[1].positionX,
     ballData[1].positionY,
     0,
     "texture/8ball.jpg",
     ballData[1].size
   );
-  ballData[1].object = ball2;
+  ballData[1].object = blackBall;
+
+  console.log("Black Ball Position:", blackBall.position);
 
   // Basketball
   Basketball = createBall(
-    -20,
+    ballData[2].positionX,
     ballData[2].positionY,
     0,
     "texture/Basketball.jpg",
@@ -175,15 +197,19 @@ function addObjects() {
   );
   ballData[2].object = Basketball;
 
+  console.log("Basketball Position:", Basketball.position);
+
   // BeachBall
   BeachBall = createBall(
-    -50,
+    ballData[3].positionX,
     ballData[3].positionY,
     0,
     "texture/BeachBall.jpg",
     ballData[3].size
   );
   ballData[3].object = BeachBall;
+
+  console.log("Beach Ball Position:", BeachBall.position);
 
   // Sky Sphere (Background)
   var geometryBackground = new THREE.SphereGeometry(700, 32, 32);
@@ -195,6 +221,56 @@ function addObjects() {
   background = new THREE.Mesh(geometryBackground, materialBackground);
   background.position.set(0, 0, 0);
   scene.add(background);
+  loadObjWithMTL(
+    "/models/trampoline/trampoline.obj",
+    "/models/trampoline/trampoline.mtl",
+    0.5,
+    0.5,
+    0.5,
+    150,
+    20,
+    0
+  );
+  createObstacles();
+}
+
+function createObstacles() {
+  // Create the first obstacle (thick plank)
+  var geometryPlane1 = new THREE.BoxGeometry(40, 5, 40);
+  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
+  var materialPlane1 = new THREE.MeshBasicMaterial({
+    map: planeTexture1,
+    side: THREE.DoubleSide,
+  });
+  var plane1 = new THREE.Mesh(geometryPlane1, materialPlane1);
+  plane1.position.set(-100, 100, 0); // Position the plank to the left
+
+  // Rotate the plank around the y-axis by 45 degrees
+  plane1.rotation.x = -Math.PI / 4;
+  const quaternion1 = new THREE.Quaternion();
+  quaternion1.setFromEuler(
+    new THREE.Euler(Math.PI / 2, Math.PI / 4, Math.PI / 2)
+  );
+  plane1.rotation.setFromQuaternion(quaternion1);
+  scene.add(plane1);
+
+  var geometryPlane2 = new THREE.BoxGeometry(40, 5, 40);
+  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
+  var materialPlane2 = new THREE.MeshBasicMaterial({
+    map: planeTexture1,
+    side: THREE.DoubleSide,
+  });
+  plane2 = new THREE.Mesh(geometryPlane2, materialPlane2);
+  plane2.position.set(100, 80, 0); // Position the plank to the left
+
+  // Rotate the plank around the y-axis by 45 degrees
+  plane2.rotation.x = -Math.PI / 4;
+  const quaternion2 = new THREE.Quaternion();
+  quaternion2.setFromEuler(
+    new THREE.Euler(Math.PI / 2, -Math.PI / 4, Math.PI / 2)
+  );
+  plane2.rotation.setFromQuaternion(quaternion2);
+  scene.add(plane2);
 }
 
 function createBall(x, y, z, texturePath, size) {
@@ -209,6 +285,30 @@ function createBall(x, y, z, texturePath, size) {
   return ball;
 }
 
+function loadObjWithMTL(
+  objPath,
+  MTLpath,
+  scalex,
+  scaley,
+  scalez,
+  posX,
+  posY,
+  posZ
+) {
+  // ak nie je potrebná globálna premenná tu definujte objekt objTrampoline;
+  var mtlLoader = new THREE.MTLLoader();
+  mtlLoader.load(MTLpath, function (materials) {
+    materials.preload();
+    var objLoader = new THREE.OBJLoader();
+    objLoader.setMaterials(materials);
+    objLoader.load(objPath, function (object) {
+      objTrampoline = object;
+      objTrampoline.position.set(posX, posY, posZ);
+      objTrampoline.scale.set(scalex, scaley, scalez);
+      scene.add(objTrampoline);
+    });
+  });
+}
 // Add wind control button
 function createWindToggleButton() {
   const button = document.createElement("button");
@@ -230,64 +330,16 @@ function createWindToggleButton() {
   });
 }
 
-// function detectBallCollision(ball1, ball2) {
-//   const distance = ball1.position.clone().sub(ball2.position).length();
-//   const combinedRadius =
-//     ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
-//   return distance < combinedRadius; // Balls are colliding if the distance is smaller than their combined radius
-// }
-
-// function handleBallCollision(ball1, ball2) {
-//   if (detectBallCollision(ball1, ball2)) {
-//     const direction = ball1.position.clone().sub(ball2.position).normalize();
-//     const combinedRadius =
-//       ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
-//     const overlap =
-//       combinedRadius - ball1.position.clone().sub(ball2.position).length();
-
-//     // If there's overlap, adjust their positions to prevent overlap
-//     if (overlap > 0) {
-//       const adjustment = direction.multiplyScalar(overlap / 2); // Split the overlap equally
-//       ball1.position.add(adjustment);
-//       ball2.position.sub(adjustment);
-//     }
-
-//     // Simple bounce (elastic collision)
-//     const normalVelocity1 = ball1.velocity.dot(direction);
-//     const normalVelocity2 = ball2.velocity.dot(direction);
-
-//     const newVelocity1 =
-//       (normalVelocity1 * (ball1.mass - ball2.mass) +
-//         2 * ball2.mass * normalVelocity2) /
-//       (ball1.mass + ball2.mass);
-//     const newVelocity2 =
-//       (normalVelocity2 * (ball2.mass - ball1.mass) +
-//         2 * ball1.mass * normalVelocity1) /
-//       (ball1.mass + ball2.mass);
-
-//     ball1.velocity.add(
-//       direction.multiplyScalar(newVelocity1 - normalVelocity1)
-//     ); // Update ball 1's velocity
-//     ball2.velocity.add(
-//       direction.multiplyScalar(newVelocity2 - normalVelocity2)
-//     ); // Update ball 2's velocity
-//   }
-// }
-
 function ballSimulation() {
+  if (objTrampoline) {
+    trampolineBox = new THREE.Box3().setFromObject(objTrampoline);
+  }
+
   ballData.forEach((ball) => {
     if (!isDragging || draggableObject !== ball.object) {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
 
-      // // Ball-to-ball collision check
-      // ballData.forEach((otherBall) => {
-      //   if (ball !== otherBall) {
-      //     handleBallCollision(ball.object, otherBall.object); // Resolve collision
-      //   }
-      // });
-
-      // Apply wind if enabled.
       if (windEnabled) {
         ball.object.position.x += windForce.x * ball.windResistance * timeStep;
         ball.object.position.z += windForce.z * ball.windResistance * timeStep;
@@ -304,24 +356,46 @@ function ballSimulation() {
           windForce.z
         ).normalize();
 
-        // Apply rotation using wind direction and effect
-        const rotationAmount = windEffect * ball.windResistance * rotationSpeed;
+        const rotationAmount =
+          windEffect * ball.windResistance * rotationSpeed * 3;
+        const randomFactor = 0.02 * (Math.random() - 0.5);
 
-        // Slight random variation to make the rotation more natural
-        const randomFactor = 0.02 * (Math.random() - 0.5); // Small random factor for variation
-
-        // Apply rotation based on wind direction
-        ball.object.rotation.x +=
-          (windDirection.x + randomFactor) * rotationAmount;
-        ball.object.rotation.z +=
+        ball.object.rotation.z -=
           (windDirection.z + randomFactor) * rotationAmount;
       }
 
-      if (ball.positionY <= ball.size + -5) {
-        ball.positionY = ball.size + -5;
-        ball.velocity = -ball.velocity * ball.bounce;
+      const ballBox = new THREE.Box3().setFromObject(ball.object);
+
+      // Handle trampoline collision
+      if (trampolineBox && trampolineBox.intersectsBox(ballBox)) {
+        // Reverse velocity for bounce with higher multiplier
+        ball.velocity =
+          Math.abs(ball.velocity) * ball.bounce * trampolineMultiplier;
+        if (Math.abs(ball.velocity) < 0.5) {
+          trampolineMultiplier = 1.5;
+        } else {
+          trampolineMultiplier *= 0.9;
+        }
+        console.log("Ball velocity after trampoline bounce:", ball.velocity);
+
+        // Adjust position above trampoline to prevent repeated collisions
+        ball.positionY = trampolineBox.max.y + ball.size + 0.01; // Add small offset
       }
 
+      // Handle ground collision
+      if (ball.positionY <= ball.size + -5) {
+        // Reverse velocity for bounce with decay
+        ball.velocity = -ball.velocity * ball.bounce * 0.9;
+        // Adjust position to ground level
+        ball.positionY = ball.size + -5;
+
+        // Stop bouncing if velocity is too small
+        if (Math.abs(ball.velocity) < 0.1) {
+          ball.velocity = 0;
+        }
+      }
+
+      // Update ball's position in the scene
       ball.object.position.y = ball.positionY;
     }
   });
@@ -371,10 +445,10 @@ function createSurfaceSelectionMenu() {
 function updateSurface(selectedSurface) {
   const surfaceProperties = {
     grass: { bounce: 0.5, friction: 0.7, texture: "texture/grass2.jpg" },
-    wood: { bounce: 0.6, friction: 0.5, texture: "texture/wood2.jpg" },
-    brick: { bounce: 0.7, friction: 0.6, texture: "texture/brick_floor.jpg" },
+    wood: { bounce: 1, friction: 0.5, texture: "texture/wood2.jpg" },
+    brick: { bounce: 1, friction: 0.6, texture: "texture/brick_floor.jpg" },
     trampoline: {
-      bounce: 0.9,
+      bounce: 1.2,
       friction: 0.3,
       texture: "texture/trampoline.jpg",
     },
@@ -394,7 +468,7 @@ function updateSurface(selectedSurface) {
 
   // Update ball properties for the surface
   ballData.forEach((ball) => {
-    ball.bounce = surface.bounce;
+    ball.bounce *= surface.bounce;
   });
 }
 
@@ -411,6 +485,7 @@ function onMouseDown(event) {
   var intersects = raycaster.intersectObjects(allBalls);
 
   if (intersects.length > 0) {
+    trampolineMultiplier = 1.5;
     isDragging = true;
     hasDragged = false; // Resetting the drag state
     draggableObject = intersects[0].object;
@@ -442,18 +517,7 @@ function onMouseMove(event) {
       const newY = Math.max(intersection.y, groundLevel);
 
       // Set new position, but maintain the Z position from ballZPositions
-      draggableObject.position.set(
-        intersection.x,
-        newY,
-        0
-        // ballZPositions[
-        //   draggableObject === tennisBall
-        //     ? "tennisBall"
-        //     : draggableObject === ball2
-        //     ? "ball2"
-        //     : "Basketball"
-        // ]
-      );
+      draggableObject.position.set(intersection.x, newY, 0);
 
       // Update ball's Y position
       ballData.forEach((ball) => {
@@ -609,17 +673,6 @@ function addCustomBall(
     size: size,
     windResistance: windResistance,
   });
-
-  console.log("Custom ball added with properties:", {
-    size,
-    bounce,
-    gravity,
-    windResistance,
-    posX,
-    posY,
-    posZ,
-    color,
-  });
 }
 
 function createBallWithColor(x, y, z, color, size) {
@@ -632,19 +685,5 @@ function createBallWithColor(x, y, z, color, size) {
 }
 
 function update() {
-  var delta = clock.getDelta();
-  var moveDistance = 30 * delta;
-  var rotateAngle = (Math.PI / 2) * delta;
-
-  if (keyboard.pressed("W")) {
-    tennisBall.translateZ(moveDistance);
-    ballZPositions.tennisBall = tennisBall.position.z; // Update Z position
-  }
-
-  if (keyboard.pressed("S")) {
-    tennisBall.translateZ(-moveDistance);
-    ballZPositions.tennisBall = tennisBall.position.z; // Update Z position
-  }
-
   controls.update();
 }
