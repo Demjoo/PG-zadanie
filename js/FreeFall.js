@@ -1,20 +1,34 @@
-var camera, scene, renderer, controls; // Added 'controls'
-var plane, tennisBall, blackBall, Basketball, background, plane1, plane2;
-var clock = new THREE.Clock();
-var keyboard = new THREEx.KeyboardState();
-var objTrampoline;
-let trampolineBox = null;
-let waterBlock; // Water block variable
-const minVelocityThreshold = 0.1; // Minimum velocity to stop bouncing
-var trampolineMultiplier = 1.5;
-var CameraX = 0,
-  CameraY = 0;
+var camera,
+  scene,
+  renderer,
+  controls,
+  clock = new THREE.Clock(),
+  keyboard = new THREEx.KeyboardState(),
+  trampolineMultiplier = 1.5,
+  CameraX = 0,
+  CameraY = 0,
+  gravity = -20,
+  timeStep = 0.05,
+  windEnabled = false,
+  windForce = { x: 10, z: 5 },
+  raycaster = new THREE.Raycaster(),
+  mouse = new THREE.Vector2(),
+  //Objects//
+  plane,
+  tennisBall,
+  blackBall,
+  Basketball,
+  BeachBall,
+  background,
+  plane1,
+  plane2,
+  objTrampoline,
+  isDragging = false,
+  draggableObject = null;
 
-// Gravity and physics variables for the ball simulation
-var gravity = -20;
-var timeStep = 0.05;
-var windEnabled = false; // Toggle wind on/off
-var windForce = { x: 10, z: 5 }; // Wind strength and direction
+let trampolineBox = null;
+let hasDragged = false;
+const minVelocityThreshold = 0.1; // Minimum velocity to stop bouncing
 
 let obstacles = [
   { position: { x: -100, y: 100, z: 0 }, width: 40, height: 5 },
@@ -28,7 +42,7 @@ var ballData = [
     positionX: 0,
     positionY: 20,
     object: null,
-    gravity: -15,
+    gravity: -20,
     bounce: 0.9,
     size: 5,
     hitboxSize: 10,
@@ -55,7 +69,7 @@ var ballData = [
     size: 12,
     hitboxSize: 24,
     windResistance: 0.15,
-  }, // Basketball
+  }, // Basketball with higher bounce
   {
     velocity: 0,
     positionX: -50,
@@ -72,12 +86,6 @@ var ballData = [
 ballData.forEach((ball) => {
   ball.originalGravity = ball.gravity;
 });
-
-// Drag-and-drop variables
-var raycaster = new THREE.Raycaster();
-var mouse = new THREE.Vector2();
-var isDragging = false;
-var draggableObject = null;
 
 init();
 render();
@@ -96,20 +104,15 @@ function init() {
   // Renderer Setup
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true; // Disable all shadows
+  renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
   // Scene Setup
   scene = new THREE.Scene();
-  createWindToggleButton();
-  // OrbitControls
-  controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.update();
 
   addObjects();
   addLights();
-  createSurfaceSelectionMenu(); // f the dropdown menu
 
   // Event Listeners
   window.addEventListener("mousedown", onMouseDown, false);
@@ -117,7 +120,13 @@ function init() {
   window.addEventListener("mouseup", onMouseUp, false);
 
   updateSurface("brick"); // Set default surface
+
+  createWindToggleButton();
+  createSurfaceSelectionMenu(); // Add the dropdown menu
   createCustomBallMenu(); // Pridanie menu na obrazovku
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.update();
 }
 
 function updateCameraFocus() {
@@ -132,42 +141,9 @@ function updateCameraFocus() {
 
 function render() {
   requestAnimationFrame(render);
-  if (keyboard.pressed("R")) {
-    ballData[0].positionY = 20;
-    tennisBall.position.x = 0;
-    tennisBall.position.z = 0;
-
-    ballData[1].positionY = 30;
-    blackBall.position.x = 15;
-    blackBall.position.z = 0;
-
-    ballData[2].positionY = 20;
-    Basketball.position.x = -20;
-    Basketball.position.z = 0;
-
-    ballData[3].positionY = 20;
-    BeachBall.position.x = -50;
-    BeachBall.position.z = 0;
-    CameraX = 0;
-    CameraY = 0;
-    camera.position.set(0, 50, 100);
-  }
-
-  if (keyboard.pressed("W")) {
-    CameraY += 1;
-  }
-  if (keyboard.pressed("S")) {
-    CameraY -= 1;
-  }
-  if (keyboard.pressed("A")) {
-    CameraX -= 1;
-  }
-  if (keyboard.pressed("D")) {
-    CameraX += 1;
-  }
+  handleKeyboardInput();
   camera.lookAt(CameraX, CameraY, 0);
 
-  // Simulate free-fall for the spheres if not dragging
   if (!isDragging) {
     ballSimulation();
   }
@@ -243,7 +219,7 @@ function addObjects() {
   console.log("Beach Ball Position:", BeachBall.position);
 
   // Sky Sphere (Background)
-  var geometryBackground = new THREE.SphereGeometry(700, 32, 32);
+  var geometryBackground = new THREE.SphereGeometry(800, 64, 64);
   var backgroundTexture = new THREE.TextureLoader().load("texture/sky.jpg");
   var materialBackground = new THREE.MeshStandardMaterial({
     map: backgroundTexture,
@@ -264,118 +240,17 @@ function addObjects() {
   );
   createObstacles();
 }
-
-function createObstacles() {
-  // Create the first obstacle (thick plank)
-  var geometryPlane1 = new THREE.BoxGeometry(40, 5, 40);
-  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
-  var materialPlane1 = new THREE.MeshStandardMaterial({
-    map: planeTexture1,
-    side: THREE.DoubleSide,
-  });
-  var plane1 = new THREE.Mesh(geometryPlane1, materialPlane1);
-  plane1.position.set(-100, 100, 0); // Position the plank to the left
-
-  // Rotate the plank around the y-axis by 45 degrees
-  plane1.rotation.x = -Math.PI / 4;
-  const quaternion1 = new THREE.Quaternion();
-  quaternion1.setFromEuler(
-    new THREE.Euler(Math.PI / 2, Math.PI / 4, Math.PI / 2)
-  );
-  plane1.rotation.setFromQuaternion(quaternion1);
-  scene.add(plane1);
-
-  var geometryPlane2 = new THREE.BoxGeometry(40, 5, 40);
-  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
-  var materialPlane2 = new THREE.MeshStandardMaterial({
-    map: planeTexture1,
-    side: THREE.DoubleSide,
-  });
-  plane2 = new THREE.Mesh(geometryPlane2, materialPlane2);
-  plane2.position.set(100, 80, 0); // Position the plank to the left
-
-  // Rotate the plank around the y-axis by 45 degrees
-  plane2.rotation.x = -Math.PI / 4;
-  const quaternion2 = new THREE.Quaternion();
-  quaternion2.setFromEuler(
-    new THREE.Euler(Math.PI / 2, -Math.PI / 4, Math.PI / 2)
-  );
-  plane2.rotation.setFromQuaternion(quaternion2);
-  scene.add(plane2);
-}
-
-function createBall(x, y, z, texturePath, size) {
-  var geometryBall = new THREE.SphereGeometry(size, 32, 32); // Ball size now passed in
-  var ballTexture = new THREE.TextureLoader().load(texturePath);
-  var materialBall = new THREE.MeshStandardMaterial({
-    map: ballTexture,
-  });
-  var ball = new THREE.Mesh(geometryBall, materialBall);
-  ball.position.set(x, y, z);
-  ball.castShadow = true;
-  // ball.receiveShadow = true;
-  scene.add(ball);
-  return ball;
-}
-
-function loadObjWithMTL(
-  objPath,
-  MTLpath,
-  scalex,
-  scaley,
-  scalez,
-  posX,
-  posY,
-  posZ
-) {
-  // ak nie je potrebná globálna premenná tu definujte objekt objTrampoline;
-  var mtlLoader = new THREE.MTLLoader();
-  mtlLoader.load(MTLpath, function (materials) {
-    materials.preload();
-    var objLoader = new THREE.OBJLoader();
-    objLoader.setMaterials(materials);
-    objLoader.load(objPath, function (object) {
-      objTrampoline = object;
-      objTrampoline.position.set(posX, posY, posZ);
-      objTrampoline.scale.set(scalex, scaley, scalez);
-
-      objTrampoline.traverse(function (child) {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-      scene.add(objTrampoline);
-    });
-  });
-}
-// Add wind control button
-function createWindToggleButton() {
-  const button = document.createElement("button");
-  button.id = "toggle-wind";
-  button.innerText = "Toggle Wind";
-  button.style.position = "absolute";
-  button.style.top = "20px";
-  button.style.right = "10px";
-  button.style.zIndex = "1000";
-  button.style.height = "30px";
-  button.style.width = "120px";
-  button.style.borderRadius = "7px";
-  button.style.border = "2px solid #007BFF";
-  document.body.appendChild(button);
-
-  button.addEventListener("click", () => {
-    windEnabled = !windEnabled;
-    button.innerText = windEnabled ? "Wind ON" : "Wind OFF";
-  });
-}
+///////////////////END addObjects////////////////////
 
 function ballSimulation() {
   if (objTrampoline) {
     trampolineBox = new THREE.Box3().setFromObject(objTrampoline);
   }
+  const plane1Box = new THREE.Box3().setFromObject(plane1);
 
   ballData.forEach((ball) => {
+    const ballBox = new THREE.Box3().setFromObject(ball.object);
+
     if (!isDragging || draggableObject !== ball.object) {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
@@ -404,8 +279,6 @@ function ballSimulation() {
           (windDirection.z + randomFactor) * rotationAmount;
       }
 
-      const ballBox = new THREE.Box3().setFromObject(ball.object);
-
       // Handle trampoline collision
       if (trampolineBox && trampolineBox.intersectsBox(ballBox)) {
         // Reverse velocity for bounce with higher multiplier
@@ -420,6 +293,12 @@ function ballSimulation() {
 
         // Adjust position above trampoline to prevent repeated collisions
         ball.positionY = trampolineBox.max.y + ball.size + 0.01; // Add small offset
+      }
+
+      if (plane1Box.intersectsBox(ballBox)) {
+        ball.velocity = -ball.velocity * ball.bounce * 0.9;
+        // Adjust position to ground level
+        ball.positionY = plane1Box.max.y + ball.size + 0.01;
       }
 
       // Handle ground collision
@@ -438,46 +317,6 @@ function ballSimulation() {
       // Update ball's position in the scene
       ball.object.position.y = ball.positionY;
     }
-  });
-}
-
-// Function to create the surface selection dropdown menu
-function createSurfaceSelectionMenu() {
-  const menuContainer = document.createElement("div");
-  menuContainer.style.position = "absolute";
-  menuContainer.style.top = "20px";
-  menuContainer.style.left = "15px";
-  menuContainer.style.zIndex = "1000";
-
-  const label = document.createElement("label");
-  label.setAttribute("for", "surface-select");
-  label.innerText = "Select Surface: ";
-  menuContainer.appendChild(label);
-
-  const select = document.createElement("select");
-  select.id = "surface-select";
-
-  // Add options to the dropdown
-  const surfaces = {
-    brick: "Brick",
-    grass: "Grass",
-    wood: "Wood",
-    trampoline: "Trampoline",
-  };
-
-  for (const [key, value] of Object.entries(surfaces)) {
-    const option = document.createElement("option");
-    option.value = key;
-    option.innerText = value;
-    select.appendChild(option);
-  }
-
-  menuContainer.appendChild(select);
-  document.body.appendChild(menuContainer);
-
-  // Add event listener for surface change
-  select.addEventListener("change", (event) => {
-    updateSurface(event.target.value);
   });
 }
 
@@ -512,8 +351,7 @@ function updateSurface(selectedSurface) {
   });
 }
 
-let hasDragged = false; // Track dragging state
-
+////////////////////CONTROLS EVENTS////////////////////
 function onMouseDown(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -581,6 +419,208 @@ function onMouseUp(event) {
   } else {
     controls.enabled = true; // Enable controls if it was a simple click
   }
+}
+
+function handleKeyboardInput() {
+  if (keyboard.pressed("R")) {
+    ballData[0].positionY = 20;
+    tennisBall.position.x = 0;
+    tennisBall.position.z = 0;
+
+    ballData[1].positionY = 30;
+    blackBall.position.x = 15;
+    blackBall.position.z = 0;
+
+    ballData[2].positionY = 20;
+    Basketball.position.x = -20;
+    Basketball.position.z = 0;
+
+    ballData[3].positionY = 20;
+    BeachBall.position.x = -50;
+    BeachBall.position.z = 0;
+    CameraX = 0;
+    CameraY = 0;
+    camera.position.set(0, 50, 100);
+  }
+
+  if (keyboard.pressed("W")) {
+    CameraY += 1;
+  }
+  if (keyboard.pressed("S")) {
+    CameraY -= 1;
+  }
+  if (keyboard.pressed("A")) {
+    CameraX -= 1;
+  }
+  if (keyboard.pressed("D")) {
+    CameraX += 1;
+  }
+}
+
+////////////////////END CONTROLS EVENTS////////////////////
+////////////////////OBJECTS CREATION////////////////////
+
+function createObstacles() {
+  // Create the first obstacle (thick plank)
+  var geometryPlane1 = new THREE.BoxGeometry(40, 5, 40);
+  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
+  var materialPlane1 = new THREE.MeshStandardMaterial({
+    map: planeTexture1,
+    side: THREE.DoubleSide,
+  });
+  plane1 = new THREE.Mesh(geometryPlane1, materialPlane1);
+  plane1.position.set(-250, 100, 0);
+  plane1.castShadow = true;
+  plane1.receiveShadow = true;
+  plane1.rotation.x = -Math.PI / 4;
+  const quaternion1 = new THREE.Quaternion();
+  quaternion1.setFromEuler(
+    new THREE.Euler(Math.PI / 2, Math.PI / 4, Math.PI / 2)
+  );
+  plane1.rotation.setFromQuaternion(quaternion1);
+  scene.add(plane1);
+
+  var geometryPlane2 = new THREE.BoxGeometry(40, 5, 40);
+  var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
+  var materialPlane2 = new THREE.MeshStandardMaterial({
+    map: planeTexture1,
+    side: THREE.DoubleSide,
+  });
+  plane2 = new THREE.Mesh(geometryPlane2, materialPlane2);
+  plane2.position.set(-100, 80, 0);
+  plane2.castShadow = true;
+  plane2.receiveShadow = true;
+  plane2.rotation.x = -Math.PI / 4;
+  const quaternion2 = new THREE.Quaternion();
+  quaternion2.setFromEuler(
+    new THREE.Euler(Math.PI / 2, -Math.PI / 4, Math.PI / 2)
+  );
+  plane2.rotation.setFromQuaternion(quaternion2);
+  scene.add(plane2);
+}
+
+function createBall(x, y, z, texturePath, size) {
+  var geometryBall = new THREE.SphereGeometry(size, 32, 32); // Ball size now passed in
+  var ballTexture = new THREE.TextureLoader().load(texturePath);
+  var materialBall = new THREE.MeshStandardMaterial({
+    map: ballTexture,
+  });
+  var ball = new THREE.Mesh(geometryBall, materialBall);
+  ball.position.set(x, y, z);
+  ball.castShadow = true;
+  ball.receiveShadow = true;
+  scene.add(ball);
+  return ball;
+}
+
+function loadObjWithMTL(
+  objPath,
+  MTLpath,
+  scalex,
+  scaley,
+  scalez,
+  posX,
+  posY,
+  posZ
+) {
+  var mtlLoader = new THREE.MTLLoader();
+  mtlLoader.load(MTLpath, function (materials) {
+    materials.preload();
+    var objLoader = new THREE.OBJLoader();
+    objLoader.setMaterials(materials);
+    objLoader.load(objPath, function (object) {
+      objTrampoline = object;
+      objTrampoline.position.set(posX, posY, posZ);
+      objTrampoline.scale.set(scalex, scaley, scalez);
+
+      objTrampoline.traverse(function (child) {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      scene.add(objTrampoline);
+    });
+  });
+}
+
+function addCustomBall(
+  size,
+  bounce,
+  gravity,
+  windResistance,
+  posY,
+  posZ,
+  color
+) {
+  const lastBall = ballData[ballData.length - 1];
+  console.log("last ball", lastBall);
+
+  const posX = lastBall
+    ? lastBall.object.position.x - lastBall.size * 2 - size * 2
+    : 0;
+
+  const newBall = createBallWithColor(posX, posY, posZ, color, size);
+  ballData.push({
+    velocity: 0,
+    positionY: posY,
+    object: newBall,
+    gravity: gravity,
+    bounce: bounce,
+    size: size,
+    windResistance: windResistance,
+  });
+}
+
+function createBallWithColor(x, y, z, color, size) {
+  const geometry = new THREE.SphereGeometry(size, 32, 32);
+  const material = new THREE.MeshStandardMaterial({ color: color });
+  const ball = new THREE.Mesh(geometry, material);
+  ball.position.set(x, y, z);
+  ball.castShadow = true;
+  scene.add(ball);
+  return ball;
+}
+
+function addLights() {
+  var ambientLight = new THREE.AmbientLight(0x777777);
+  scene.add(ambientLight);
+
+  var spotlight1 = new THREE.SpotLight("rgb(255,255,255)");
+  spotlight1.angle = Math.PI / 3;
+  spotlight1.position.set(0, 400, 8);
+  spotlight1.intensity = 2;
+  spotlight1.penumbra = 1;
+  spotlight1.castShadow = true;
+
+  scene.add(spotlight1);
+  ////////////////////END OBJECTS CREATION////////////////////
+}
+
+function update() {
+  controls.update();
+}
+
+/////////////////// UI ELEMENTS////////////////////
+// Add wind control button
+function createWindToggleButton() {
+  const button = document.createElement("button");
+  button.id = "toggle-wind";
+  button.innerText = "Toggle Wind";
+  button.style.position = "absolute";
+  button.style.top = "20px";
+  button.style.right = "10px";
+  button.style.zIndex = "1000";
+  button.style.height = "30px";
+  button.style.width = "120px";
+  button.style.borderRadius = "7px";
+  button.style.border = "2px solid #007BFF";
+  document.body.appendChild(button);
+
+  button.addEventListener("click", () => {
+    windEnabled = !windEnabled;
+    button.innerText = windEnabled ? "Wind ON" : "Wind OFF";
+  });
 }
 
 function createCustomBallMenu() {
@@ -682,63 +722,45 @@ function createCustomBallMenu() {
   document.body.appendChild(formContainer);
 }
 
-function addCustomBall(
-  size,
-  bounce,
-  gravity,
-  windResistance,
-  posY,
-  posZ,
-  color
-) {
-  // We get the last ball from the ballData list (assuming at least one ball has already been added)
-  const lastBall = ballData[ballData.length - 1];
-  console.log("last ball", lastBall);
+// Function to create the surface selection dropdown menu
+function createSurfaceSelectionMenu() {
+  const menuContainer = document.createElement("div");
+  menuContainer.style.position = "absolute";
+  menuContainer.style.top = "20px";
+  menuContainer.style.left = "15px";
+  menuContainer.style.zIndex = "1000";
+  menuContainer.style.color = "white";
 
-  // We determine the X position of the new ball based on the X position of the last ball.
-  const posX = lastBall
-    ? lastBall.object.position.x - lastBall.size * 2 - size * 2
-    : 0;
+  const label = document.createElement("label");
+  label.setAttribute("for", "surface-select");
+  label.innerText = "Select Surface: ";
+  menuContainer.appendChild(label);
 
-  // We create a new ball with the selected color as its texture
-  const newBall = createBallWithColor(posX, posY, posZ, color, size);
+  const select = document.createElement("select");
+  select.id = "surface-select";
 
-  // We add the new ball to the simulation
-  ballData.push({
-    velocity: 0,
-    positionY: posY,
-    object: newBall,
-    gravity: gravity,
-    bounce: bounce,
-    size: size,
-    windResistance: windResistance,
+  // Add options to the dropdown
+  const surfaces = {
+    brick: "Brick",
+    grass: "Grass",
+    wood: "Wood",
+    trampoline: "Trampoline",
+  };
+
+  for (const [key, value] of Object.entries(surfaces)) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.innerText = value;
+    select.appendChild(option);
+  }
+
+  menuContainer.appendChild(select);
+  document.body.appendChild(menuContainer);
+
+  // Add event listener for surface change
+  select.addEventListener("change", (event) => {
+    updateSurface(event.target.value);
   });
 }
 
-function createBallWithColor(x, y, z, color, size) {
-  const geometry = new THREE.SphereGeometry(size, 32, 32);
-  const material = new THREE.MeshStandardMaterial({ color: color });
-  const ball = new THREE.Mesh(geometry, material);
-  ball.position.set(x, y, z);
-  ball.castShadow = true;
-  scene.add(ball);
-  return ball;
-}
-
-function addLights() {
-  var ambientLight = new THREE.AmbientLight(0x777777);
-  scene.add(ambientLight);
-
-  var spotlight1 = new THREE.SpotLight("rgb(255,255,255)");
-  spotlight1.angle = Math.PI / 3;
-  spotlight1.position.set(0, 400, 8);
-  spotlight1.intensity = 2;
-  spotlight1.penumbra = 1;
-  spotlight1.castShadow = true;
-
-  scene.add(spotlight1);
-}
-
-function update() {
-  controls.update();
-}
+/////////////////// UI ELEMENTS END////////////////////
