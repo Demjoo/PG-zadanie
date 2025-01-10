@@ -326,11 +326,6 @@ function updateSurface(selectedSurface) {
     grass: { bounce: 0.5, friction: 0.7, texture: "texture/grass2.jpg" },
     wood: { bounce: 1, friction: 0.5, texture: "texture/wood2.jpg" },
     brick: { bounce: 1, friction: 0.6, texture: "texture/brick_floor.jpg" },
-    trampoline: {
-      bounce: 1.2,
-      friction: 0.3,
-      texture: "texture/trampoline.jpg",
-    },
   };
 
   const surface = surfaceProperties[selectedSurface];
@@ -744,7 +739,6 @@ function createSurfaceSelectionMenu() {
     brick: "Brick",
     grass: "Grass",
     wood: "Wood",
-    trampoline: "Trampoline",
   };
 
   for (const [key, value] of Object.entries(surfaces)) {
