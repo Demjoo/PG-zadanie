@@ -7,6 +7,8 @@ let trampolineBox = null;
 let waterBlock; // Water block variable
 const minVelocityThreshold = 0.1; // Minimum velocity to stop bouncing
 var trampolineMultiplier = 1.5;
+var CameraX = 0,
+  CameraY = 0;
 
 // Gravity and physics variables for the ball simulation
 var gravity = -20;
@@ -26,9 +28,10 @@ var ballData = [
     positionX: 0,
     positionY: 20,
     object: null,
-    gravity: -20,
-    bounce: 0.7,
+    gravity: -15,
+    bounce: 0.9,
     size: 5,
+    hitboxSize: 10,
     windResistance: 0.2,
   }, // Tennis Ball
   {
@@ -39,6 +42,7 @@ var ballData = [
     gravity: -50,
     bounce: 0.5,
     size: 3,
+    hitboxSize: 6,
     windResistance: 0.05,
   }, // 8 ball
   {
@@ -47,10 +51,11 @@ var ballData = [
     positionY: 20,
     object: null,
     gravity: -20,
-    bounce: 0.9,
+    bounce: 1,
     size: 12,
+    hitboxSize: 24,
     windResistance: 0.15,
-  }, // Basketball with higher bounce
+  }, // Basketball
   {
     velocity: 0,
     positionX: -50,
@@ -59,6 +64,7 @@ var ballData = [
     gravity: -3,
     bounce: 0.8,
     size: 15,
+    hitboxSize: 30,
     windResistance: 0.3,
   }, // BeachBall
 ];
@@ -85,12 +91,13 @@ function init() {
     1000
   );
   camera.position.set(0, 50, 100);
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(CameraX, CameraY, 0);
 
   // Renderer Setup
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = false; // Disable all shadows
+  renderer.shadowMap.enabled = true; // Disable all shadows
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
   // Scene Setup
@@ -100,9 +107,9 @@ function init() {
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.update();
 
-  // Add objects
   addObjects();
-  createSurfaceSelectionMenu(); // Add the dropdown menu
+  addLights();
+  createSurfaceSelectionMenu(); // f the dropdown menu
 
   // Event Listeners
   window.addEventListener("mousedown", onMouseDown, false);
@@ -113,17 +120,18 @@ function init() {
   createCustomBallMenu(); // Pridanie menu na obrazovku
 }
 
+function updateCameraFocus() {
+  if (draggableObject) {
+    camera.position.set(
+      draggableObject.position.x,
+      draggableObject.position.y + 50,
+      draggableObject.position.y + 100
+    );
+  }
+}
+
 function render() {
   requestAnimationFrame(render);
-
-  // Update OrbitControls
-
-  // Simulate free-fall for the spheres if not dragging
-  if (!isDragging) {
-    ballSimulation();
-  }
-
-  renderer.render(scene, camera);
   if (keyboard.pressed("R")) {
     ballData[0].positionY = 20;
     tennisBall.position.x = 0;
@@ -140,19 +148,41 @@ function render() {
     ballData[3].positionY = 20;
     BeachBall.position.x = -50;
     BeachBall.position.z = 0;
+    CameraX = 0;
+    CameraY = 0;
+    camera.position.set(0, 50, 100);
   }
-  update();
+
+  if (keyboard.pressed("W")) {
+    CameraY += 1;
+  }
+  if (keyboard.pressed("S")) {
+    CameraY -= 1;
+  }
+  if (keyboard.pressed("A")) {
+    CameraX -= 1;
+  }
+  if (keyboard.pressed("D")) {
+    CameraX += 1;
+  }
+  camera.lookAt(CameraX, CameraY, 0);
+
+  // Simulate free-fall for the spheres if not dragging
+  if (!isDragging) {
+    ballSimulation();
+  }
+
+  updateCameraFocus();
+
+  renderer.render(scene, camera);
+  controls.update;
 }
 
 function addObjects() {
-  // Ambient Light
-  var light = new THREE.AmbientLight(0x404040, 1);
-  scene.add(light);
-
   // Plane (Ground)
   var geometryPlane = new THREE.PlaneGeometry(700, 700, 4, 4);
   var planeTexture = new THREE.TextureLoader().load("texture/brick_floor.jpg");
-  var materialPlane = new THREE.MeshBasicMaterial({
+  var materialPlane = new THREE.MeshStandardMaterial({
     map: planeTexture,
     side: THREE.DoubleSide,
   });
@@ -160,6 +190,7 @@ function addObjects() {
   plane = new THREE.Mesh(geometryPlane, materialPlane);
   plane.position.set(0, -5, 0);
   plane.rotation.x = Math.PI / 2;
+  plane.receiveShadow = true;
   scene.add(plane);
 
   // Tennis ball
@@ -214,7 +245,7 @@ function addObjects() {
   // Sky Sphere (Background)
   var geometryBackground = new THREE.SphereGeometry(700, 32, 32);
   var backgroundTexture = new THREE.TextureLoader().load("texture/sky.jpg");
-  var materialBackground = new THREE.MeshBasicMaterial({
+  var materialBackground = new THREE.MeshStandardMaterial({
     map: backgroundTexture,
     side: THREE.DoubleSide,
   });
@@ -222,8 +253,8 @@ function addObjects() {
   background.position.set(0, 0, 0);
   scene.add(background);
   loadObjWithMTL(
-    "/models/trampoline/trampoline.obj",
-    "/models/trampoline/trampoline.mtl",
+    "models/trampoline/trampoline.obj",
+    "models/trampoline/trampoline.mtl",
     0.5,
     0.5,
     0.5,
@@ -238,7 +269,7 @@ function createObstacles() {
   // Create the first obstacle (thick plank)
   var geometryPlane1 = new THREE.BoxGeometry(40, 5, 40);
   var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
-  var materialPlane1 = new THREE.MeshBasicMaterial({
+  var materialPlane1 = new THREE.MeshStandardMaterial({
     map: planeTexture1,
     side: THREE.DoubleSide,
   });
@@ -256,7 +287,7 @@ function createObstacles() {
 
   var geometryPlane2 = new THREE.BoxGeometry(40, 5, 40);
   var planeTexture1 = new THREE.TextureLoader().load("texture/brick_floor.jpg");
-  var materialPlane2 = new THREE.MeshBasicMaterial({
+  var materialPlane2 = new THREE.MeshStandardMaterial({
     map: planeTexture1,
     side: THREE.DoubleSide,
   });
@@ -276,11 +307,13 @@ function createObstacles() {
 function createBall(x, y, z, texturePath, size) {
   var geometryBall = new THREE.SphereGeometry(size, 32, 32); // Ball size now passed in
   var ballTexture = new THREE.TextureLoader().load(texturePath);
-  var materialBall = new THREE.MeshBasicMaterial({
+  var materialBall = new THREE.MeshStandardMaterial({
     map: ballTexture,
   });
   var ball = new THREE.Mesh(geometryBall, materialBall);
   ball.position.set(x, y, z);
+  ball.castShadow = true;
+  // ball.receiveShadow = true;
   scene.add(ball);
   return ball;
 }
@@ -305,6 +338,13 @@ function loadObjWithMTL(
       objTrampoline = object;
       objTrampoline.position.set(posX, posY, posZ);
       objTrampoline.scale.set(scalex, scaley, scalez);
+
+      objTrampoline.traverse(function (child) {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
       scene.add(objTrampoline);
     });
   });
@@ -677,11 +717,26 @@ function addCustomBall(
 
 function createBallWithColor(x, y, z, color, size) {
   const geometry = new THREE.SphereGeometry(size, 32, 32);
-  const material = new THREE.MeshBasicMaterial({ color: color });
+  const material = new THREE.MeshStandardMaterial({ color: color });
   const ball = new THREE.Mesh(geometry, material);
   ball.position.set(x, y, z);
+  ball.castShadow = true;
   scene.add(ball);
   return ball;
+}
+
+function addLights() {
+  var ambientLight = new THREE.AmbientLight(0x777777);
+  scene.add(ambientLight);
+
+  var spotlight1 = new THREE.SpotLight("rgb(255,255,255)");
+  spotlight1.angle = Math.PI / 3;
+  spotlight1.position.set(0, 400, 8);
+  spotlight1.intensity = 2;
+  spotlight1.penumbra = 1;
+  spotlight1.castShadow = true;
+
+  scene.add(spotlight1);
 }
 
 function update() {
