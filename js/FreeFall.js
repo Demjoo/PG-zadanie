@@ -297,14 +297,18 @@ function ballSimulation() {
 
       // Handle trampoline collision
       if (trampolineBox && trampolineBox.intersectsBox(ballBox)) {
-        // Reverse velocity for bounce with higher multiplier
-        ball.velocity =
-          Math.abs(ball.velocity) * ball.bounce * trampolineMultiplier;
-        if (Math.abs(ball.velocity) < 0.5) {
-          trampolineMultiplier = 1.5;
-        } else {
-          trampolineMultiplier *= 0.9;
-        }
+        // Apply bounce with slight energy loss for high-bounce materials
+        const effectiveBounce =
+          ball.bounce > 0.98 ? ball.bounce * 0.98 : ball.bounce;
+        ball.velocity = -ball.velocity * effectiveBounce;
+
+        // Adjust position above trampoline to prevent repeated collisions
+        ball.positionY = trampolineBox.max.y + ball.size + 0.01;
+
+        // Ensure trampolineMultiplier reduces over time for lower bounces
+        trampolineMultiplier *= 0.9; // Decay multiplier
+        if (trampolineMultiplier < 1) trampolineMultiplier = 1; // Avoid going below 1
+
         console.log("Ball velocity after trampoline bounce:", ball.velocity);
 
         // Adjust position above trampoline to prevent repeated collisions
@@ -433,21 +437,12 @@ function onMouseUp(event) {
 
 function handleKeyboardInput() {
   if (keyboard.pressed("R")) {
-    ballData[0].positionY = 20;
-    tennisBall.position.x = 0;
-    tennisBall.position.z = 0;
+    ballData.forEach((ball) => {
+      ball.object.position.x = ball.positionX;
+      ball.object.position.y = ball.positionY;
+      ball.object.position.z = 0;
+    });
 
-    ballData[1].positionY = 30;
-    blackBall.position.x = 15;
-    blackBall.position.z = 0;
-
-    ballData[2].positionY = 20;
-    Basketball.position.x = -20;
-    Basketball.position.z = 0;
-
-    ballData[3].positionY = 20;
-    BeachBall.position.x = -50;
-    BeachBall.position.z = 0;
     CameraX = 0;
     CameraY = 0;
     camera.position.set(0, 50, 100);
@@ -574,6 +569,7 @@ function addCustomBall(
   ballData.push({
     velocity: 0,
     positionY: posY,
+    positionX: posX,
     object: newBall,
     gravity: gravity,
     bounce: bounce,
@@ -588,6 +584,7 @@ function createBallWithColor(x, y, z, color, size) {
   const ball = new THREE.Mesh(geometry, material);
   ball.position.set(x, y, z);
   ball.castShadow = true;
+  ball.receiveShadow = true;
   scene.add(ball);
   return ball;
 }
@@ -774,46 +771,95 @@ function createSurfaceSelectionMenu() {
 
 /////////////////// UI ELEMENTS END////////////////////
 
-function detectBallCollision(ball1, ball2) {
-  const distance = ball1.position.clone().sub(ball2.position).length();
-  const combinedRadius =
-    ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
-  return distance < combinedRadius; // Balls are colliding if the distance is smaller than their combined radius
+// Helper function to compute the distance between two balls
+function getDistanceBetweenBalls(ball1, ball2) {
+  return ball1.position.distanceTo(ball2.position);
 }
 
+// Helper function to compute the overlap of two balls
+function getOverlap(ball1, ball2) {
+  const distance = getDistanceBetweenBalls(ball1, ball2);
+  const combinedRadius =
+    ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
+  return combinedRadius - distance;
+}
+
+// Function to detect collision between two balls
+function detectBallCollision(ball1, ball2) {
+  return (
+    getDistanceBetweenBalls(ball1, ball2) <
+    ball1.geometry.parameters.radius + ball2.geometry.parameters.radius
+  );
+}
+
+function ensureVelocity(ball) {
+  if (!ball.velocity) {
+    ball.velocity = new THREE.Vector3(0, 0, 0); // Default velocity
+  }
+}
+
+// Function to handle the ball collision response
 function handleBallCollision(ball1, ball2) {
-  if (detectBallCollision(ball1, ball2)) {
-    const direction = ball1.position.clone().sub(ball2.position).normalize();
-    const combinedRadius =
-      ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
-    const overlap =
-      combinedRadius - ball1.position.clone().sub(ball2.position).length();
+  // Ensure both balls have a valid velocity property
+  ensureVelocity(ball1);
+  ensureVelocity(ball2);
 
-    // If there's overlap, adjust their positions to prevent overlap
-    if (overlap > 0) {
-      const adjustment = direction.multiplyScalar(overlap / 2); // Split the overlap equally
-      ball1.position.add(adjustment);
-      ball2.position.sub(adjustment);
-    }
+  if (!detectBallCollision(ball1, ball2)) return;
 
-    // Simple bounce (elastic collision)
-    const normalVelocity1 = ball1.velocity.dot(direction);
-    const normalVelocity2 = ball2.velocity.dot(direction);
+  // Compute the direction and overlap
+  const direction = ball1.position.clone().sub(ball2.position).normalize();
+  const overlap = getOverlap(ball1, ball2);
 
-    const newVelocity1 =
-      (normalVelocity1 * (ball1.mass - ball2.mass) +
-        2 * ball2.mass * normalVelocity2) /
-      (ball1.mass + ball2.mass);
-    const newVelocity2 =
-      (normalVelocity2 * (ball2.mass - ball1.mass) +
-        2 * ball1.mass * normalVelocity1) /
-      (ball1.mass + ball2.mass);
+  // Prevent overlap if any
+  if (overlap > 0) {
+    const adjustment = direction.multiplyScalar(overlap / 2);
+    ball1.position.add(adjustment);
+    ball2.position.sub(adjustment);
+  }
 
+  // Compute the velocities along the collision normal (direction)
+  const normalVelocity1 = ball1.velocity.dot(direction);
+  const normalVelocity2 = ball2.velocity.dot(direction);
+
+  // Apply conservation of momentum to get new velocities
+  const combinedMass = ball1.mass + ball2.mass;
+
+  // Early exit if the lighter ball is nearly stationary and would push the heavier ball indefinitely
+  if (Math.abs(normalVelocity1) < 0.01 && Math.abs(normalVelocity2) < 0.01) {
+    return; // No significant movement, no update needed
+  }
+
+  // Calculate new velocities based on momentum conservation
+  const newVelocity1 =
+    (normalVelocity1 * (ball1.mass - ball2.mass) +
+      2 * ball2.mass * normalVelocity2) /
+    combinedMass;
+  const newVelocity2 =
+    (normalVelocity2 * (ball2.mass - ball1.mass) +
+      2 * ball1.mass * normalVelocity1) /
+    combinedMass;
+
+  // Limit excessive velocity change to avoid unrealistic outcomes
+  const maxVelocityChange = 0.1; // Set a cap on how much velocity can change per collision
+
+  // Compute the difference in velocities
+  const velocityChange1 = newVelocity1 - normalVelocity1;
+  const velocityChange2 = newVelocity2 - normalVelocity2;
+
+  // Apply the maximum velocity change limit
+  if (Math.abs(velocityChange1) > maxVelocityChange) {
     ball1.velocity.add(
-      direction.multiplyScalar(newVelocity1 - normalVelocity1)
-    ); // Update ball 1's velocity
+      direction.multiplyScalar(maxVelocityChange * Math.sign(velocityChange1))
+    );
+  } else {
+    ball1.velocity.add(direction.multiplyScalar(velocityChange1));
+  }
+
+  if (Math.abs(velocityChange2) > maxVelocityChange) {
     ball2.velocity.add(
-      direction.multiplyScalar(newVelocity2 - normalVelocity2)
-    ); // Update ball 2's velocity
+      direction.multiplyScalar(maxVelocityChange * Math.sign(velocityChange2))
+    );
+  } else {
+    ball2.velocity.add(direction.multiplyScalar(velocityChange2));
   }
 }
