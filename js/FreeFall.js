@@ -243,6 +243,7 @@ function addObjects() {
 ///////////////////END addObjects////////////////////
 
 function ballSimulation() {
+  var isOnPlane = false;
   if (objTrampoline) {
     trampolineBox = new THREE.Box3().setFromObject(objTrampoline);
   }
@@ -251,9 +252,24 @@ function ballSimulation() {
   ballData.forEach((ball) => {
     const ballBox = new THREE.Box3().setFromObject(ball.object);
 
+    if (ball.object.position.x >= 354 || ball.object.position.x <= -354) {
+      isOnPlane = false;
+    } else {
+      isOnPlane = true;
+    }
+
     if (!isDragging || draggableObject !== ball.object) {
       ball.velocity += ball.gravity * timeStep;
       ball.positionY += ball.velocity * timeStep;
+
+      // // Ball-to-ball collision check
+      ballData.forEach((otherBall) => {
+        if (ball !== otherBall) {
+          handleBallCollision(ball.object, otherBall.object); // Resolve collision
+        }
+      });
+
+      // console.log(ball.velocity);
 
       if (windEnabled) {
         ball.object.position.x += windForce.x * ball.windResistance * timeStep;
@@ -300,9 +316,8 @@ function ballSimulation() {
         // Adjust position to ground level
         ball.positionY = plane1Box.max.y + ball.size + 0.01;
       }
-
       // Handle ground collision
-      if (ball.positionY <= ball.size + -5) {
+      if (ball.positionY <= ball.size + -5 && isOnPlane) {
         // Reverse velocity for bounce with decay
         ball.velocity = -ball.velocity * ball.bounce * 0.9;
         // Adjust position to ground level
@@ -758,3 +773,47 @@ function createSurfaceSelectionMenu() {
 }
 
 /////////////////// UI ELEMENTS END////////////////////
+
+function detectBallCollision(ball1, ball2) {
+  const distance = ball1.position.clone().sub(ball2.position).length();
+  const combinedRadius =
+    ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
+  return distance < combinedRadius; // Balls are colliding if the distance is smaller than their combined radius
+}
+
+function handleBallCollision(ball1, ball2) {
+  if (detectBallCollision(ball1, ball2)) {
+    const direction = ball1.position.clone().sub(ball2.position).normalize();
+    const combinedRadius =
+      ball1.geometry.parameters.radius + ball2.geometry.parameters.radius;
+    const overlap =
+      combinedRadius - ball1.position.clone().sub(ball2.position).length();
+
+    // If there's overlap, adjust their positions to prevent overlap
+    if (overlap > 0) {
+      const adjustment = direction.multiplyScalar(overlap / 2); // Split the overlap equally
+      ball1.position.add(adjustment);
+      ball2.position.sub(adjustment);
+    }
+
+    // Simple bounce (elastic collision)
+    const normalVelocity1 = ball1.velocity.dot(direction);
+    const normalVelocity2 = ball2.velocity.dot(direction);
+
+    const newVelocity1 =
+      (normalVelocity1 * (ball1.mass - ball2.mass) +
+        2 * ball2.mass * normalVelocity2) /
+      (ball1.mass + ball2.mass);
+    const newVelocity2 =
+      (normalVelocity2 * (ball2.mass - ball1.mass) +
+        2 * ball1.mass * normalVelocity1) /
+      (ball1.mass + ball2.mass);
+
+    ball1.velocity.add(
+      direction.multiplyScalar(newVelocity1 - normalVelocity1)
+    ); // Update ball 1's velocity
+    ball2.velocity.add(
+      direction.multiplyScalar(newVelocity2 - normalVelocity2)
+    ); // Update ball 2's velocity
+  }
+}
