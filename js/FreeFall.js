@@ -65,7 +65,7 @@ var ballData = [
     positionY: 20,
     object: null,
     gravity: -20,
-    bounce: 1,
+    bounce: 0.999,
     size: 12,
     hitboxSize: 24,
     windResistance: 0.15,
